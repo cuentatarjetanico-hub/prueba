@@ -49,7 +49,7 @@
         async function cargarPanel() {
             let datos = {};
             try {
-                const res = await fetch(`https://kvdb.io{ID_RESTAURANTE}`);
+                const res = await fetch(`https://kvdb.io{ID_RESTAURANTE}`, {;
                 if (res.ok) datos = await res.json();
             } catch(e) {}
 
