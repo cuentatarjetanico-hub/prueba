@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Montecarlos - Carta de Bebidas</title>
+    <style>
+        body, html { margin: 0; padding: 0; background: #000; text-align: center; overflow-x: hidden; font-family: 'Segoe UI', sans-serif; }
+        #pantalla-inicio { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0d0d0d; color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; font-size: 22px; z-index: 9999; cursor: pointer; }
+        .subtexto { font-size: 14px; color: #888; margin-top: 12px; }
+        .contenedor-menu { position: relative; max-width: 450px; margin: 0 auto; background: #000; container-type: inline-size; }
+        .imagen-fondo { width: 100%; display: block; height: auto; }
+
+        /* Precio: centrado en su rectángulo blanco */
+        .precio-flotante { position: absolute; transform: translate(-50%, -50%); z-index: 50; pointer-events: none; }
+        .precio-texto { font-weight: bold; font-size: 15px; font-size: 3.9cqw; color: #000; font-family: sans-serif; line-height: 1; white-space: nowrap; }
+
+        /* Texto de promos: dentro del recuadro oscuro de PROMOS */
+        .promos-caja { position: absolute; z-index: 30; pointer-events: none; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 3%; overflow: hidden; }
+        .promos-texto { color: #fff; font-weight: bold; font-size: 16px; font-size: 4cqw; line-height: 1.3; white-space: pre-wrap; word-break: break-word; text-align: center; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
+
+        /* Sin stock: imagen PNG (sin_stock_N.png) o, si no existe, un rectángulo oscuro de respaldo */
+        .sin-stock-png { position: absolute; top: 0; left: 0; width: 100%; height: auto; z-index: 20; pointer-events: none; }
+        .zona-plato { position: absolute; transform: translate(-50%, -50%); z-index: 20; pointer-events: none; border-radius: 10px; border-radius: 2.4cqw; }
+        .oscurecer-plato { background: rgba(0, 0, 0, 0.88); }
+        .cartel-sin-stock { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #d62828; color: #fff; padding: 3px 6px; font-weight: bold; font-size: 9px; font-size: 2cqw; border-radius: 3px; text-transform: uppercase; white-space: nowrap; box-shadow: 0 2px 5px rgba(0,0,0,0.5); }
+    </style>
+</head>
+<body>
+
+    <div id="pantalla-inicio" onclick="abrirMenuSinChrome()">
+        <div>🍸 TOCÁ PARA VER LA CARTA 🍸</div>
+        <div class="subtexto">(Abre la carta a pantalla completa)</div>
+    </div>
+
+    <div class="contenedor-menu" onclick="abrirMenuSinChrome()">
+        <img src="menu1.jpg" class="imagen-fondo" alt="Carta Montecarlos">
+        <div id="elementos-dinamicos"></div>
+    </div>
+
+    <script>
+        // ---- POSICIONES EN PÍXELES ----
+        // Todo está medido en píxeles de la imagen, contados desde la esquina de arriba a la izquierda,
+        // con la imagen a ANCHO_REF píxeles de ancho. Si se alarga la imagen hacia abajo (sin cambiar
+        // el ancho), todo se queda en su lugar sin tocar nada.
+        const ANCHO_REF = 419;
+        const RECT_W = 74, RECT_H = 47;                 // tamaño del rectángulo blanco de precio
+        const PROMO = { x: 18, y: 273, w: 382, h: 189 }; // recuadro oscuro de PROMOS (esquina sup. izq. y tamaño)
+
+        // x, y = CENTRO del rectángulo blanco de precio de cada bebida
+        // (el id no cambia nunca: es el que usan datos.json y los PNG sin_stock_ID.png)
+        const CONFIG_BEBIDAS = [
+            { id: 1,  x: 141.5, y: 616 },    { id: 2,  x: 364, y: 616 },
+            { id: 3,  x: 141.5, y: 804 },    { id: 4,  x: 364, y: 804 },
+            { id: 5,  x: 141.5, y: 1010.5 }, { id: 6,  x: 364, y: 1010.5 },
+            { id: 7,  x: 141.5, y: 1206.5 }, { id: 8,  x: 364, y: 1206.5 },
+            { id: 9,  x: 141.5, y: 1405.5 }, { id: 10, x: 364, y: 1405.5 },
+            { id: 11, x: 141.5, y: 1601 },   { id: 12, x: 364, y: 1601 },
+            { id: 13, x: 141.5, y: 1799.5 }, { id: 19, x: 364, y: 1799.5 },   // 19 = Vino Dilema (nuevo)
+            { id: 20, x: 141.5, y: 1994 },   { id: 14, x: 361, y: 1994 },     // 20 = Vino New Age (nuevo)
+            { id: 15, x: 141.5, y: 2181 },   { id: 16, x: 361, y: 2181 },
+            { id: 17, x: 141.5, y: 2392 },   { id: 18, x: 361, y: 2392 }
+        ];
+
+        const img = document.querySelector('.imagen-fondo');
+        function altoRef() { return img.naturalWidth ? img.naturalHeight * ANCHO_REF / img.naturalWidth : 2576; }
+        const pctX = px => (px / ANCHO_REF * 100) + "%";
+        const pctY = px => (px / altoRef() * 100) + "%";
+        function esperarImagen() {
+            return new Promise(res => {
+                if (img.complete && img.naturalWidth) res();
+                else { img.addEventListener('load', res); img.addEventListener('error', res); }
+            });
+        }
+
+        // Rectángulo oscuro de respaldo (se usa si no existe el PNG sin_stock_ID.png)
+        function crearRespaldo(b) {
+            const d = document.createElement('div');
+            d.className = 'zona-plato oscurecer-plato';
+            d.style.left = pctX(b.x); d.style.top = pctY(b.y);
+            d.style.width = pctX(RECT_W + 3); d.style.height = pctY(RECT_H + 3);   // +3 px para tapar el borde blanco
+            d.innerHTML = '<div class="cartel-sin-stock">SIN STOCK</div>';
+            return d;
+        }
+        // Sin stock: PNG del tamaño de la carta, pegado arriba a la izquierda
+        function crearSinStock(b) {
+            const p = document.createElement('img');
+            p.className = 'sin-stock-png';
+            p.alt = '';
+            p.onerror = () => p.replaceWith(crearRespaldo(b));
+            p.src = 'sin_stock_' + b.id + '.png';
+            return p;
+        }
+
+        async function cargarMenu() {
+            try {
+                const res = await fetch('datos.json?nocache=' + new Date().getTime());
+                if (!res.ok) return;
+                const datos = await res.json();
+                const contenedor = document.getElementById('elementos-dinamicos');
+                contenedor.innerHTML = "";
+
+                // Texto de promos
+                const promos = (datos["promos_texto"] || "").trim();
+                if (promos) {
+                    const caja = document.createElement('div');
+                    caja.className = 'promos-caja';
+                    caja.style.left = pctX(PROMO.x); caja.style.top = pctY(PROMO.y);
+                    caja.style.width = pctX(PROMO.w); caja.style.height = pctY(PROMO.h);
+                    const t = document.createElement('div');
+                    t.className = 'promos-texto';
+                    t.textContent = promos;
+                    caja.appendChild(t);
+                    contenedor.appendChild(caja);
+                }
+
+                CONFIG_BEBIDAS.forEach(b => {
+                    const precio = datos[`cuadrícula_${b.id}_precio`] || "";
+                    const stockTexto = datos[`cuadrícula_${b.id}_stock`] || "SI";
+                    const tieneStock = stockTexto.toUpperCase() === "SI";
+
+                    if (tieneStock) {
+                        const divPrecio = document.createElement('div');
+                        divPrecio.className = 'precio-flotante';
+                        divPrecio.style.top = pctY(b.y); divPrecio.style.left = pctX(b.x);
+                        const s = document.createElement('span');
+                        s.className = 'precio-texto';
+                        s.textContent = precio;
+                        divPrecio.appendChild(s);
+                        contenedor.appendChild(divPrecio);
+                    } else {
+                        contenedor.appendChild(crearSinStock(b));
+                    }
+                });
+            } catch (e) { console.log(e); }
+        }
+
+        function abrirMenuSinChrome() {
+            var elemento = document.documentElement;
+            if (elemento.requestFullscreen) elemento.requestFullscreen();
+            else if (elemento.webkitRequestFullscreen) elemento.webkitRequestFullscreen();
+            document.getElementById('pantalla-inicio').style.display = 'none';
+        }
+
+        esperarImagen().then(cargarMenu);
+    </script>
+</body>
+</html>
